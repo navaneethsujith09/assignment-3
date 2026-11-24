@@ -203,80 +203,88 @@ class Kernel:
     # This method is triggered when the currently running process requests to initialize a new semaphore.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_init_semaphore(self, semaphore_id: int, initial_value: int):
-        if self.scheduling_algorithm == PRIORITY:
-            self.semaphores[semaphore_id] = {
-                "value": initial_value,
-                "blocked": deque()
-            }
+        self.semaphores[semaphore_id] = {
+            "value": initial_value,
+            "blocked": deque()
+        }
         return
 
     # This method is triggered when the currently running process calls p() on an existing semaphore.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_semaphore_p(self, semaphore_id: int) -> PID:
-        if self.scheduling_algorithm == PRIORITY:
-            sem = self.semaphores[semaphore_id]
-            if sem["value"] > 0:
-                sem["value"] -= 1
-            else:
-                sem["blocked"].append(self.running)
-                self.running = self.idle_pcb
-                self.choose_next_process()
+        sem = self.semaphores[semaphore_id]
+        if sem["value"] > 0:
+            sem["value"] -= 1
+        else:
+            sem["blocked"].append(self.running)
+            self.running = self.idle_pcb
+            self.choose_next_process()
         return self.running.pid
 
     # This method is triggered when the currently running process calls v() on an existing semaphore.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_semaphore_v(self, semaphore_id: int) -> PID:
-        if self.scheduling_algorithm == PRIORITY:
-            sem = self.semaphores[semaphore_id]
-            if len(sem["blocked"]) > 0:
+        sem = self.semaphores[semaphore_id]
+        if len(sem["blocked"]) > 0:
+            if self.scheduling_algorithm == PRIORITY:
                 process = pop_max_priority(sem["blocked"])
                 self.ready_queue.append(process)
                 self.choose_next_process()
             else:
-                sem["value"] += 1
+                process = pop_min_pid(sem["blocked"])
+                process.num_quantum_ticks = 0
+                self.ready_queue.append(process)
+                if self.running is self.idle_pcb:
+                    self.choose_next_process()
+        else:
+            sem["value"] += 1
         return self.running.pid
 
     # This method is triggered when the currently running process requests to initialize a new mutex.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_init_mutex(self, mutex_id: int):
-        if self.scheduling_algorithm == PRIORITY:
-            self.mutexes[mutex_id] = {
-                "locked": False,
-                "owner": None,
-                "blocked": deque()
-            }
+        self.mutexes[mutex_id] = {
+            "locked": False,
+            "owner": None,
+            "blocked": deque()
+        }
         return
 
     # This method is triggered when the currently running process calls lock() on an existing mutex.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_mutex_lock(self, mutex_id: int) -> PID:
-        if self.scheduling_algorithm == PRIORITY:
-            mutex = self.mutexes[mutex_id]
+        mutex = self.mutexes[mutex_id]
 
-            if not mutex["locked"]:
-                mutex["locked"] = True
-                mutex["owner"] = self.running.pid
-            else:
-                mutex["blocked"].append(self.running)
-                self.running = self.idle_pcb
-                self.choose_next_process()
+        if not mutex["locked"]:
+            mutex["locked"] = True
+            mutex["owner"] = self.running.pid
+        else:
+            mutex["blocked"].append(self.running)
+            self.running = self.idle_pcb
+            self.choose_next_process()
         return self.running.pid
 
     # This method is triggered when the currently running process calls unlock() on an existing mutex.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_mutex_unlock(self, mutex_id: int) -> PID:
-        if self.scheduling_algorithm == PRIORITY:
-            mutex = self.mutexes[mutex_id]
+        mutex = self.mutexes[mutex_id]
 
-            if len(mutex["blocked"]) > 0:
+        if len(mutex["blocked"]) > 0:
+            if self.scheduling_algorithm == PRIORITY:
                 process = pop_max_priority(mutex["blocked"])
-
                 mutex["owner"] = process.pid
                 self.ready_queue.append(process)
                 self.choose_next_process()
             else:
-                mutex["locked"] = False
-                mutex["owner"] = None
+                process = pop_min_pid(mutex["blocked"])
+                process.num_quantum_ticks = 0
+                mutex["owner"] = process.pid
+                self.ready_queue.append(process)
+                if self.running is self.idle_pcb:
+                    self.choose_next_process()
+        else:
+            mutex["locked"] = False
+            mutex["owner"] = None
 
         return self.running.pid
 
